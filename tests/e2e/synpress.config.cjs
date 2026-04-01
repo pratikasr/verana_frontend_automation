@@ -1,3 +1,4 @@
+const path = require('path');
 const baseConfig = require('@agoric/synpress/synpress.config');
 const { defineConfig } = require('cypress');
 
@@ -16,12 +17,19 @@ module.exports = defineConfig({
         if (event === 'before:browser:launch') {
           origOn(event, async (browser, launchOptions) => {
             const result = await handler(browser, launchOptions);
-            if (browser.name === 'chrome' && process.env.CI) {
-              result.args.push(
-                '--no-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-setuid-sandbox',
-              );
+            if (browser.name === 'chrome') {
+              if (process.env.CI) {
+                result.args.push(
+                  '--no-sandbox',
+                  '--disable-dev-shm-usage',
+                  '--disable-setuid-sandbox',
+                );
+              }
+              // Load our pinned MV3 Keplr extension (synpress defaults
+              // to MV2 which Chrome 127+ has deprecated)
+              const keplrDir = path.resolve(process.cwd(), 'extensions', 'keplr');
+              result.extensions = result.extensions || [];
+              result.extensions.push(keplrDir);
             }
             return result;
           });
@@ -29,6 +37,10 @@ module.exports = defineConfig({
           origOn(event, handler);
         }
       };
+
+      // Tell synpress to skip its own (MV2) Keplr download
+      process.env.SKIP_KEPLR_INSTALL = 'true';
+
       baseSNE(wrappedOn, config);
       return config;
     },
