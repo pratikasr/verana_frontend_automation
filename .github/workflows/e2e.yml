@@ -19,12 +19,14 @@ jobs:
       - run: npm ci
       - name: Download Keplr extension
         run: npm run download:keplr
-      - name: Start Xvfb
+      - name: Start Xvfb and window manager
         run: |
           sudo pkill -f 'Xvfb :99' || true
           sudo rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 || true
           sleep 1
           Xvfb :99 -screen 0 1920x1080x24 &
+          sleep 2
+          DISPLAY=:99 fluxbox &
           sleep 2
       - name: Run E2E tests
         run: npm run test:e2e
