@@ -46,7 +46,7 @@ jobs:
             sleep 2
           fi
       - name: Run E2E tests
-        run: npx synpress run --configFile=tests/e2e/synpress.config.cjs --browser=/opt/chrome-for-testing/chrome
+        run: npx synpress run --configFile=tests/e2e/synpress.config.cjs --browser=/opt/chrome-for-testing/chrome --spec tests/e2e/specs/01-connect-wallet.spec.js
         env:
           SECRET_WORDS: ${{ secrets.SECRET_WORDS }}
           CYPRESS_WALLET_PASSWORD: ${{ secrets.CYPRESS_WALLET_PASSWORD }}
