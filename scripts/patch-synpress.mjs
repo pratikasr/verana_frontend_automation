@@ -129,10 +129,18 @@ const newAssignWin = `async assignWindows() {
         )
       ) {
         keplrWindow = page;
+      } else if (
+        keplrExtensionData &&
+        page.url().includes(
+          'chrome-extension://' + keplrExtensionData.id + '/popup.html',
+        )
+      ) {
+        // Close stray popup.html opened at startup (MV3 quirk)
+        await page.close().catch(() => {});
       }
     }
 
-    // MV3 fix: Keplr may not auto-open register.html
+    // MV3 fix: Keplr may not auto-open register.html on some environments
     if (!keplrWindow && keplrExtensionData && keplrExtensionData.id) {
       const context = await browser.contexts()[0];
       keplrWindow = await context.newPage();
