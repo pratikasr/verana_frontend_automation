@@ -1,0 +1,22 @@
+node_modules/
+.env
+cypress/screenshots/
+cypress/videos/
+extensions/
+
+# Synpress cache
+.synpress/
+
+# macOS
+.DS_Store
+
+# Cypress patched binary
+Cypress.app/
+binary_state.json
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/
