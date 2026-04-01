@@ -31,21 +31,26 @@ jobs:
             rm /tmp/cft.zip
           fi
           /opt/chrome-for-testing/chrome --version
-      - name: Start Xvfb and window manager
+      - name: Ensure display is ready
         run: |
-          sudo pkill -f 'Xvfb :99' || true
-          sudo rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 || true
-          sleep 1
-          Xvfb :99 -screen 0 1920x1080x24 &
-          sleep 2
-          DISPLAY=:99 fluxbox &
-          sleep 2
+          # Use display :1 (VNC-visible) if available, otherwise start :99
+          if xdpyinfo -display :1 >/dev/null 2>&1; then
+            echo "Using existing VNC display :1"
+          else
+            sudo pkill -f 'Xvfb :99' || true
+            sudo rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 || true
+            sleep 1
+            Xvfb :99 -screen 0 1920x1080x24 &
+            sleep 2
+            DISPLAY=:99 fluxbox &
+            sleep 2
+          fi
       - name: Run E2E tests
         run: npx synpress run --configFile=tests/e2e/synpress.config.cjs --browser=/opt/chrome-for-testing/chrome
         env:
           SECRET_WORDS: ${{ secrets.SECRET_WORDS }}
           CYPRESS_WALLET_PASSWORD: ${{ secrets.CYPRESS_WALLET_PASSWORD }}
-          DISPLAY: ':99'
+          DISPLAY: ':1'
           EXTENSION: keplr
       - name: Upload screenshots on failure
         if: failure()
