@@ -19,6 +19,18 @@ jobs:
       - run: npm ci
       - name: Download Keplr extension
         run: npm run download:keplr
+      - name: Install Chrome for Testing
+        run: |
+          # Google Chrome stable blocks --load-extension; Chrome for Testing allows it
+          if [ ! -f /opt/chrome-for-testing/chrome ]; then
+            CFT_URL="https://storage.googleapis.com/chrome-for-testing-public/$(google-chrome --version | grep -oP '\d+\.\d+\.\d+\.\d+')/linux64/chrome-linux64.zip"
+            curl -L -o /tmp/cft.zip "$CFT_URL"
+            sudo rm -rf /opt/chrome-for-testing
+            sudo unzip -q /tmp/cft.zip -d /opt/
+            sudo mv /opt/chrome-linux64 /opt/chrome-for-testing
+            rm /tmp/cft.zip
+          fi
+          /opt/chrome-for-testing/chrome --version
       - name: Start Xvfb and window manager
         run: |
           sudo pkill -f 'Xvfb :99' || true
@@ -29,11 +41,12 @@ jobs:
           DISPLAY=:99 fluxbox &
           sleep 2
       - name: Run E2E tests
-        run: npm run test:e2e
+        run: npx synpress run --configFile=tests/e2e/synpress.config.cjs --browser=/opt/chrome-for-testing/chrome
         env:
           SECRET_WORDS: ${{ secrets.SECRET_WORDS }}
           CYPRESS_WALLET_PASSWORD: ${{ secrets.CYPRESS_WALLET_PASSWORD }}
           DISPLAY: ':99'
+          EXTENSION: keplr
       - name: Upload screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4

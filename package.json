@@ -6,7 +6,8 @@
   "scripts": {
     "test:e2e": "EXTENSION=keplr synpress run --configFile=tests/e2e/synpress.config.cjs",
     "test:e2e:open": "EXTENSION=keplr synpress open --configFile=tests/e2e/synpress.config.cjs",
-    "download:keplr": "node scripts/download-keplr.mjs"
+    "download:keplr": "node scripts/download-keplr.mjs",
+    "postinstall": "node scripts/patch-synpress.mjs"
   },
   "devDependencies": {
     "@agoric/synpress": "^3.8.5-beta.0",
