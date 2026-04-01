@@ -17,8 +17,6 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - name: Install system dependencies
-        run: sudo apt-get install -y unzip
       - name: Download Keplr extension
         run: npm run download:keplr
       - name: Start Xvfb
@@ -29,3 +27,9 @@ jobs:
           SECRET_WORDS: ${{ secrets.SECRET_WORDS }}
           CYPRESS_WALLET_PASSWORD: ${{ secrets.CYPRESS_WALLET_PASSWORD }}
           DISPLAY: ':99'
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-screenshots
+          path: cypress/screenshots
