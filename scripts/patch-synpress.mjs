@@ -168,5 +168,119 @@ if (
   console.log('✓ Patched init() (3s delay for extension loading)');
 }
 
+// 4. Patch switchToKeplrNotification — MV3 notification popups may not
+//    appear in context.pages(). Use CDP to find them and connect.
+const switchNotifRe =
+  /async switchToKeplrNotification\(\) \{[\s\S]*?throw new Error[\s\S]*?\}\s*\},/;
+const newSwitchNotif = `async switchToKeplrNotification() {
+    const keplrExtensionData = (await module.exports.getExtensionsData()).keplr;
+
+    // First check existing pages (works for MV2 and some MV3 cases)
+    let pages = await browser.contexts()[0].pages();
+    for (const page of pages) {
+      if (
+        page.url().includes('chrome-extension://' + keplrExtensionData.id + '/popup.html') &&
+        page !== keplrWindow
+      ) {
+        keplrNotificationWindow = page;
+        retries = 0;
+        await page.bringToFront();
+        await module.exports.waitUntilStable(page);
+        return page;
+      }
+    }
+
+    // MV3 fix: popup may not be in context.pages() — check CDP targets
+    // and open popup.html manually if a notification is pending
+    if (retries === 10 || retries === 30) {
+      try {
+        const resp = await fetch('http://127.0.0.1:9222/json/list');
+        const targets = await resp.json();
+        for (const target of targets) {
+          if (
+            target.url.includes('chrome-extension://' + keplrExtensionData.id + '/popup.html') &&
+            target.type === 'page'
+          ) {
+            // Found popup via CDP — connect to it
+            const context = await browser.contexts()[0];
+            const popupPage = await context.newPage();
+            await popupPage.goto(target.url, { waitUntil: 'load' });
+            await new Promise(r => setTimeout(r, 1000));
+            keplrNotificationWindow = popupPage;
+            retries = 0;
+            await popupPage.bringToFront();
+            await module.exports.waitUntilStable(popupPage);
+            return popupPage;
+          }
+        }
+      } catch (e) {
+        // CDP check failed, continue retrying
+      }
+    }
+
+    // At retry 40, try opening popup.html directly as a last resort
+    if (retries === 40) {
+      try {
+        const context = await browser.contexts()[0];
+        const popupPage = await context.newPage();
+        await popupPage.goto(
+          'chrome-extension://' + keplrExtensionData.id + '/popup.html',
+          { waitUntil: 'load' }
+        );
+        await new Promise(r => setTimeout(r, 2000));
+        const bodyText = await popupPage.innerText('body').catch(() => '');
+        if (bodyText.length > 0) {
+          keplrNotificationWindow = popupPage;
+          retries = 0;
+          await popupPage.bringToFront();
+          return popupPage;
+        } else {
+          await popupPage.close();
+        }
+      } catch (e) {
+        // popup open failed
+      }
+    }
+
+    await sleep(200);
+    if (retries < 50) {
+      retries++;
+      return await module.exports.switchToKeplrNotification();
+    } else if (retries >= 50) {
+      retries = 0;
+      throw new Error(
+        '[switchToKeplrNotification] Max amount of retries to switch to keplr notification window has been reached. It was never found.',
+      );
+    }
+  },`;
+
+if (switchNotifRe.test(content)) {
+  content = content.replace(switchNotifRe, newSwitchNotif);
+  console.log('✓ Patched switchToKeplrNotification (MV3 popup detection)');
+} else {
+  console.log('⚠ switchToKeplrNotification already patched or not found');
+}
+
+// 5. Also patch init() to set up a page event listener for new popups
+const initConnected = '// patched: wait for extension service worker to start';
+if (
+  content.includes(initConnected) &&
+  !content.includes('// patched: listen for new pages')
+) {
+  content = content.replace(
+    initConnected,
+    `// patched: listen for new pages (MV3 popup detection)
+    const context = await browser.contexts()[0];
+    context.on('page', async (newPage) => {
+      const keplrExt = (await module.exports.getExtensionsData()).keplr;
+      if (keplrExt && newPage.url().includes('chrome-extension://' + keplrExt.id + '/popup.html')) {
+        keplrNotificationWindow = newPage;
+      }
+    });
+    // patched: wait for extension service worker to start`,
+  );
+  console.log('✓ Patched init() (MV3 page event listener for popups)');
+}
+
 fs.writeFileSync(filePath, content);
 console.log('All patches applied to playwright-keplr.js');
