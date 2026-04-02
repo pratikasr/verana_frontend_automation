@@ -154,49 +154,39 @@ const newAssignWin = `async assignWindows() {
     return true;
   },
 
-  // MV3: enable side panel mode so approval popups appear as pages
+  // MV3: enable side panel mode so approval popups appear as accessible pages
   async enableSidePanelMode() {
     const keplrExtensionData = (await module.exports.getExtensionsData()).keplr;
     if (!keplrExtensionData) return;
 
-    const context = await browser.contexts()[0];
-    const settingsPage = await context.newPage();
     const extPrefix = 'chrome-extension://' + keplrExtensionData.id;
+    const page = keplrWindow || (await browser.contexts()[0].newPage());
+    const needsClose = !keplrWindow;
 
-    // Open popup and navigate to enable side panel
-    await settingsPage.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
-    await new Promise(r => setTimeout(r, 2000));
+    await page.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
+    await new Promise(r => setTimeout(r, 3000));
 
-    // Click the hamburger/menu button (top-right)
     try {
-      const menuBtn = settingsPage.locator('button').last();
-      // Look for the menu icon in the header area
-      const headerBtns = settingsPage.locator('div').filter({ hasText: /cooluser|wallet/i }).locator('button, svg').first();
-      // Try clicking menu/hamburger icon
-      const menuIcon = settingsPage.locator('[class*="menu"], [aria-label*="menu"], svg').first();
-
-      // Simpler: just navigate directly to side panel settings via URL
-      await settingsPage.goto(extPrefix + '/popup.html#/setting', { waitUntil: 'load' });
+      // Click the hamburger menu icon (≡) at top-right
+      // It's typically rendered as an SVG with 3 horizontal lines
+      const menuIcon = page.locator('svg').last();
+      await menuIcon.click();
       await new Promise(r => setTimeout(r, 1000));
 
-      // Look for Side Panel toggle
-      const sidePanelText = settingsPage.getByText('Side Panel Mode');
-      const exists = await sidePanelText.count();
-      if (exists > 0) {
-        // Find and click the toggle near "Side Panel Mode"
-        const toggle = sidePanelText.locator('..').locator('input, [role="switch"], label').first();
-        const toggleExists = await toggle.count();
-        if (toggleExists > 0) {
-          await toggle.click();
-          await new Promise(r => setTimeout(r, 1000));
-          console.log('[synpress-patch] Side panel mode enabled');
-        }
-      }
+      // Click "Side Panel Mode" text to toggle it on
+      const sidePanelOption = page.getByText('Side Panel Mode');
+      await sidePanelOption.waitFor({ timeout: 5000 });
+      await sidePanelOption.click();
+      await new Promise(r => setTimeout(r, 2000));
+
+      console.log('[synpress-patch] Side panel mode enabled');
     } catch (e) {
       console.log('[synpress-patch] Could not enable side panel mode:', e.message);
     }
 
-    await settingsPage.close().catch(() => {});
+    if (needsClose) {
+      await page.close().catch(() => {});
+    }
   },`;
 
 if (assignWinRe.test(content)) {
