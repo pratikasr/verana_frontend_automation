@@ -172,31 +172,43 @@ const newAssignWin = `async assignWindows() {
       // Open the hamburger menu by clicking the menu icon in the top-right
       // From the DOM inspection: it's a div with SVG containing 3 lines
       // at the very top-right of the popup, next to the wallet name
-      // Debug: dump all SVGs to find the hamburger menu
-      const svgDump = await page.evaluate(() => {
-        const svgs = document.querySelectorAll('svg');
-        return Array.from(svgs).map((svg, i) => {
-          const rect = svg.getBoundingClientRect();
-          const paths = svg.querySelectorAll('path, line, rect, circle');
-          const outerHTML = svg.outerHTML.substring(0, 200);
-          return i + ': ' + paths.length + 'children ' + Math.round(rect.left) + ',' + Math.round(rect.top) + ' ' + Math.round(rect.width) + 'x' + Math.round(rect.height) + ' | ' + outerHTML;
-        }).join('\\n');
-      });
-      console.log('[enableSidePanelMode] All SVGs:\\n' + svgDump);
-
-      // Try clicking each SVG starting from the last (hamburger is usually last in header)
-      let clicked = 'not found';
-      const svgs = page.locator('svg');
-      const svgCount = await svgs.count();
-      // Click the last SVG that is in the top area (likely the hamburger)
-      for (let i = svgCount - 1; i >= 0; i--) {
-        const svg = svgs.nth(i);
-        const box = await svg.boundingBox();
-        if (box && box.y < 80 && box.width < 50) {
-          await svg.click({ force: true });
-          clicked = 'clicked svg index ' + i + ' at ' + Math.round(box.x) + ',' + Math.round(box.y);
-          break;
+      // Debug: dump all elements in the top area to find the hamburger menu
+      const topDump = await page.evaluate(() => {
+        const allEls = document.querySelectorAll('*');
+        const topEls = [];
+        for (const el of allEls) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top < 100 && rect.top >= 0 && rect.width > 0 && rect.width < 100) {
+            topEls.push(el.tagName + '.' + el.className.toString().substring(0, 30) + ' ' +
+              Math.round(rect.left) + ',' + Math.round(rect.top) + ' ' +
+              Math.round(rect.width) + 'x' + Math.round(rect.height) +
+              ' text="' + (el.textContent || '').substring(0, 20) + '"');
+          }
         }
+        return topEls.join('\\n');
+      });
+      console.log('[enableSidePanelMode] Top elements:\\n' + topDump);
+
+      // The hamburger menu in Keplr popup is a div with ≡ or ☰ character,
+      // or a styled div with 3 horizontal lines via CSS
+      // Try clicking elements at the far right of the top bar
+      let clicked = 'not found';
+      const topRight = page.locator('div, button, span').filter({
+        hasNot: page.locator('svg')
+      });
+      const count = await topRight.count();
+      let bestIdx = -1;
+      let bestRight = 0;
+      for (let i = 0; i < count; i++) {
+        const box = await topRight.nth(i).boundingBox();
+        if (box && box.y > 10 && box.y < 80 && box.width > 10 && box.width < 60 && box.x + box.width > bestRight) {
+          bestRight = box.x + box.width;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx >= 0) {
+        await topRight.nth(bestIdx).click({ force: true });
+        clicked = 'clicked top-right element index ' + bestIdx;
       }
       console.log('[enableSidePanelMode] Menu click:', clicked);
       console.log('[enableSidePanelMode] Menu click:', clicked);
