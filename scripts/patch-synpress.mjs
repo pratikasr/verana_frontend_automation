@@ -249,41 +249,24 @@ const newSwitchNotif = `async switchToKeplrNotification() {
       return keplrNotificationWindow;
     }
 
-    // MV3 fix: at retry 15, open popup.html directly
-    // (Keplr shows pending approval requests when popup is opened)
-    if (retries === 15) {
+    // MV3 fix: Keplr opens approval in popup.html via chrome.action.openPopup()
+    // which is invisible to Playwright. Try opening popup.html directly — Keplr
+    // will show any pending interaction requests when the popup renders.
+    if (retries === 10) {
       try {
         const context = await browser.contexts()[0];
         const popupPage = await context.newPage();
         await popupPage.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
-        await new Promise(r => setTimeout(r, 3000));
+        await new Promise(r => setTimeout(r, 5000));
         const bodyText = await popupPage.innerText('body').catch(() => '');
-        if (bodyText.includes('Approve') || bodyText.includes('Requesting')) {
+        console.log('[switchToKeplrNotification] popup.html text:', bodyText.substring(0, 200));
+        if (bodyText.length > 10) {
           keplrNotificationWindow = popupPage;
           retries = 0;
           await popupPage.bringToFront();
           return popupPage;
         }
         await popupPage.close().catch(() => {});
-      } catch (e) { /* continue */ }
-    }
-
-    // MV3 fix: at retry 25, try sidePanel.html
-    // (Keplr MV3 uses side panel for approval in side panel mode)
-    if (retries === 25) {
-      try {
-        const context = await browser.contexts()[0];
-        const sidePanelPage = await context.newPage();
-        await sidePanelPage.goto(extPrefix + '/sidePanel.html', { waitUntil: 'load' });
-        await new Promise(r => setTimeout(r, 3000));
-        const bodyText = await sidePanelPage.innerText('body').catch(() => '');
-        if (bodyText.includes('Approve') || bodyText.includes('Requesting')) {
-          keplrNotificationWindow = sidePanelPage;
-          retries = 0;
-          await sidePanelPage.bringToFront();
-          return sidePanelPage;
-        }
-        await sidePanelPage.close().catch(() => {});
       } catch (e) { /* continue */ }
     }
 
@@ -354,13 +337,17 @@ if (fs.existsSync(keplrJsPath)) {
 
   const newAcceptAccess = `async acceptAccess() {
     const notificationPage = await playwright.switchToKeplrNotification();
-    // MV3 Keplr: the popup may show an "Approve" button or just a generic button.
-    // Try clicking "Approve" text first, then fall back to any button.
+    console.log('[acceptAccess] notification URL:', notificationPage.url());
+    console.log('[acceptAccess] body text:', (await notificationPage.innerText('body').catch(() => '')).substring(0, 200));
+
+    // MV3 Keplr: try clicking "Approve" button text first, then fall back to generic button
     try {
-      const approveBtn = notificationPage.getByText('Approve').first();
-      await approveBtn.waitFor({ timeout: 5000 });
+      const approveBtn = notificationPage.getByRole('button', { name: /approve/i }).first();
+      await approveBtn.waitFor({ timeout: 10000 });
       await approveBtn.click();
+      console.log('[acceptAccess] Clicked Approve button');
     } catch (e) {
+      console.log('[acceptAccess] No Approve button, trying generic button');
       await playwright.waitAndClick(
         notificationPageElements.approveButton,
         notificationPage,
