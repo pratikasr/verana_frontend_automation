@@ -164,61 +164,21 @@ const newAssignWin = `async assignWindows() {
     const page = await context.newPage();
 
     try {
-      // Set narrow viewport so Keplr renders in popup mode with hamburger menu
-      await page.setViewportSize({ width: 360, height: 600 });
       await page.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
-      await new Promise(r => setTimeout(r, 3000));
-
-      // Open the hamburger menu by clicking the menu icon in the top-right
-      // From the DOM inspection: it's a div with SVG containing 3 lines
-      // at the very top-right of the popup, next to the wallet name
-      // Debug: dump all elements in the top area to find the hamburger menu
-      const topDump = await page.evaluate(() => {
-        const allEls = document.querySelectorAll('*');
-        const topEls = [];
-        for (const el of allEls) {
-          const rect = el.getBoundingClientRect();
-          if (rect.top < 100 && rect.top >= 0 && rect.width > 0 && rect.width < 100) {
-            topEls.push(el.tagName + '.' + el.className.toString().substring(0, 30) + ' ' +
-              Math.round(rect.left) + ',' + Math.round(rect.top) + ' ' +
-              Math.round(rect.width) + 'x' + Math.round(rect.height) +
-              ' text="' + (el.textContent || '').substring(0, 20) + '"');
-          }
-        }
-        return topEls.join('\\n');
-      });
-      console.log('[enableSidePanelMode] Top elements:\\n' + topDump);
-
-      // popup.html opened as a page shows bottom nav with Settings tab
-      // Click Settings → look for Side Panel Mode toggle
-      const settingsTab = page.getByText('Settings', { exact: true });
-      const settingsExists = await settingsTab.count();
-      console.log('[enableSidePanelMode] Settings tab found:', settingsExists > 0);
-
-      if (settingsExists > 0) {
-        await settingsTab.click();
-        await new Promise(r => setTimeout(r, 2000));
-        const bodyText = await page.innerText('body').catch(() => '');
-        console.log('[enableSidePanelMode] Settings page:', bodyText.substring(0, 300));
-      }
-      console.log('[enableSidePanelMode] Menu click:', clicked);
       await new Promise(r => setTimeout(r, 2000));
 
-      // Now look for "Side Panel Mode" and click it
-      const sidePanelText = page.getByText('Side Panel Mode');
-      const found = await sidePanelText.count();
-      console.log('[enableSidePanelMode] Side Panel Mode found:', found > 0);
-
-      if (found > 0) {
-        // Click the parent container of "Side Panel Mode" which toggles it
-        await sidePanelText.click();
-        await new Promise(r => setTimeout(r, 2000));
-        console.log('[enableSidePanelMode] Side panel mode toggled');
-      } else {
-        // Log what we see for debugging
-        const bodyText = await page.innerText('body').catch(() => '');
-        console.log('[enableSidePanelMode] Menu content:', bodyText.substring(0, 300));
-      }
+      // Enable side panel via chrome.storage.local
+      // Key: 'side-panel/sidePanel.isEnabled' (discovered from Keplr storage dump)
+      const result = await page.evaluate(async () => {
+        await new Promise(r => chrome.storage.local.set({
+          'side-panel/sidePanel.isEnabled': true
+        }, r));
+        const check = await new Promise(r =>
+          chrome.storage.local.get('side-panel/sidePanel.isEnabled', r)
+        );
+        return check['side-panel/sidePanel.isEnabled'];
+      });
+      console.log('[enableSidePanelMode] Set side-panel/sidePanel.isEnabled =', result);
     } catch (e) {
       console.log('[enableSidePanelMode] Error:', e.message.substring(0, 150));
     }
