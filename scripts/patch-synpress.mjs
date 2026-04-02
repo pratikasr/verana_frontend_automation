@@ -164,27 +164,57 @@ const newAssignWin = `async assignWindows() {
     const page = await context.newPage();
 
     try {
-      // Set side panel preference directly via extension storage API
-      // This bypasses the UI entirely — no need to click the hamburger menu
       await page.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
+      await new Promise(r => setTimeout(r, 3000));
+
+      // Open the hamburger menu by clicking the menu icon in the top-right
+      // From the DOM inspection: it's a div with SVG containing 3 lines
+      // at the very top-right of the popup, next to the wallet name
+      const clicked = await page.evaluate(() => {
+        // Strategy: find all SVG elements and click the one in the top-right
+        // that contains line/path elements (hamburger menu icon)
+        const svgs = document.querySelectorAll('svg');
+        for (const svg of svgs) {
+          const rect = svg.getBoundingClientRect();
+          // The hamburger menu is in the top-right area (x > 300, y < 50)
+          if (rect.top < 50 && rect.left > 300 && rect.width < 30) {
+            svg.closest('div[class]')?.click() || svg.click();
+            return 'clicked svg at ' + rect.left + ',' + rect.top;
+          }
+        }
+        // Fallback: look for a 3-line path in any SVG
+        for (const svg of svgs) {
+          const paths = svg.querySelectorAll('line, path');
+          if (paths.length >= 3) {
+            const rect = svg.getBoundingClientRect();
+            if (rect.top < 80) {
+              svg.closest('div[class]')?.click() || svg.click();
+              return 'clicked hamburger svg at ' + rect.left + ',' + rect.top;
+            }
+          }
+        }
+        return 'no menu found';
+      });
+      console.log('[enableSidePanelMode] Menu click:', clicked);
       await new Promise(r => setTimeout(r, 2000));
 
-      await page.evaluate(() => {
-        return new Promise((resolve) => {
-          if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-            chrome.storage.local.set({ 'sidePanel.isEnabled': true }, () => {
-              console.log('Side panel enabled via storage API');
-              resolve(true);
-            });
-          } else {
-            resolve(false);
-          }
-        });
-      });
-      await new Promise(r => setTimeout(r, 1000));
-      console.log('[enableSidePanelMode] Set via chrome.storage.local API');
+      // Now look for "Side Panel Mode" and click it
+      const sidePanelText = page.getByText('Side Panel Mode');
+      const found = await sidePanelText.count();
+      console.log('[enableSidePanelMode] Side Panel Mode found:', found > 0);
+
+      if (found > 0) {
+        // Click the parent container of "Side Panel Mode" which toggles it
+        await sidePanelText.click();
+        await new Promise(r => setTimeout(r, 2000));
+        console.log('[enableSidePanelMode] Side panel mode toggled');
+      } else {
+        // Log what we see for debugging
+        const bodyText = await page.innerText('body').catch(() => '');
+        console.log('[enableSidePanelMode] Menu content:', bodyText.substring(0, 300));
+      }
     } catch (e) {
-      console.log('[enableSidePanelMode] Error:', e.message.substring(0, 100));
+      console.log('[enableSidePanelMode] Error:', e.message.substring(0, 150));
     }
 
     await page.close().catch(() => {});
