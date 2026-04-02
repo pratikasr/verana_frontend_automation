@@ -179,6 +179,33 @@ const newAssignWin = `async assignWindows() {
         return check['side-panel/sidePanel.isEnabled'];
       });
       console.log('[enableSidePanelMode] Set side-panel/sidePanel.isEnabled =', result);
+      await page.close().catch(() => {});
+
+      // Reload the extension so the service worker picks up the new value
+      const reloadPage = await context.newPage();
+      await reloadPage.goto('chrome://extensions', { waitUntil: 'load' });
+      await new Promise(r => setTimeout(r, 2000));
+      // Click the reload button for the Keplr extension via the page
+      await reloadPage.evaluate((extId) => {
+        const manager = document.querySelector('extensions-manager');
+        if (manager && manager.shadowRoot) {
+          const itemList = manager.shadowRoot.querySelector('extensions-item-list');
+          if (itemList && itemList.shadowRoot) {
+            const items = itemList.shadowRoot.querySelectorAll('extensions-item');
+            for (const item of items) {
+              const idEl = item.shadowRoot?.querySelector('#extension-id');
+              if (idEl && idEl.textContent.includes(extId)) {
+                const reloadBtn = item.shadowRoot?.querySelector('#dev-reload-button');
+                if (reloadBtn) reloadBtn.click();
+              }
+            }
+          }
+        }
+      }, keplrExtensionData.id);
+      await new Promise(r => setTimeout(r, 3000));
+      console.log('[enableSidePanelMode] Extension reloaded');
+      await reloadPage.close().catch(() => {});
+      return; // skip the page.close below since we already closed it
     } catch (e) {
       console.log('[enableSidePanelMode] Error:', e.message.substring(0, 150));
     }
