@@ -171,26 +171,26 @@ const newAssignWin = `async assignWindows() {
       // Pre-grant permission for the dApp origin so Keplr auto-approves
       // without showing a popup. Key: 'permission/permissionMap/v1'
       const result = await page.evaluate(async () => {
-        // Read current permission map
+        // Read current permission map (stored as object, not JSON string)
         const items = await new Promise(r =>
           chrome.storage.local.get('permission/permissionMap/v1', r)
         );
-        const permMap = JSON.parse(items['permission/permissionMap/v1'] || '{}');
+        const permMap = items['permission/permissionMap/v1'] || {};
 
         // Grant permission for the Verana testnet dApp
         const origin = 'https://app.testnet.verana.network';
         permMap[origin] = permMap[origin] || ['vna-testnet-1', 'cosmoshub-4', 'osmosis-1'];
 
-        // Save back
+        // Save back (as object, not JSON string)
         await new Promise(r => chrome.storage.local.set({
-          'permission/permissionMap/v1': JSON.stringify(permMap)
+          'permission/permissionMap/v1': permMap
         }, r));
 
         // Verify
         const check = await new Promise(r =>
           chrome.storage.local.get('permission/permissionMap/v1', r)
         );
-        return check['permission/permissionMap/v1'];
+        return JSON.stringify(check['permission/permissionMap/v1']);
       });
       console.log('[preGrantPermission] permissionMap set:', result);
     } catch (e) {
