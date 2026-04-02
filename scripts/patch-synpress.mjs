@@ -171,27 +171,23 @@ const newAssignWin = `async assignWindows() {
       // From the DOM inspection: it's a div with SVG containing 3 lines
       // at the very top-right of the popup, next to the wallet name
       const clicked = await page.evaluate(() => {
-        // Strategy: find all SVG elements and click the one in the top-right
-        // that contains line/path elements (hamburger menu icon)
-        const svgs = document.querySelectorAll('svg');
-        for (const svg of svgs) {
-          const rect = svg.getBoundingClientRect();
-          // The hamburger menu is in the top-right area (x > 300, y < 50)
-          if (rect.top < 50 && rect.left > 300 && rect.width < 30) {
-            svg.closest('div[class]')?.click() || svg.click();
-            return 'clicked svg at ' + rect.left + ',' + rect.top;
+        // Strategy 1: The hamburger menu is the rightmost clickable element
+        // in the top bar. Find it by looking at all elements in top 60px
+        // and picking the one furthest right.
+        const allEls = document.querySelectorAll('div, button, svg');
+        let candidates = [];
+        for (const el of allEls) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top >= 0 && rect.top < 60 && rect.width > 5 && rect.width < 50 && rect.height > 5 && rect.height < 50) {
+            candidates.push({ el, right: rect.right, left: rect.left, top: rect.top });
           }
         }
-        // Fallback: look for a 3-line path in any SVG
-        for (const svg of svgs) {
-          const paths = svg.querySelectorAll('line, path');
-          if (paths.length >= 3) {
-            const rect = svg.getBoundingClientRect();
-            if (rect.top < 80) {
-              svg.closest('div[class]')?.click() || svg.click();
-              return 'clicked hamburger svg at ' + rect.left + ',' + rect.top;
-            }
-          }
+        // Sort by rightmost position
+        candidates.sort((a, b) => b.right - a.right);
+        if (candidates.length > 0) {
+          const best = candidates[0];
+          best.el.click();
+          return 'clicked at right=' + best.right + ' left=' + best.left + ' top=' + best.top;
         }
         return 'no menu found';
       });
