@@ -170,29 +170,30 @@ const newAssignWin = `async assignWindows() {
       // Open the hamburger menu by clicking the menu icon in the top-right
       // From the DOM inspection: it's a div with SVG containing 3 lines
       // at the very top-right of the popup, next to the wallet name
-      // The hamburger menu SVG has 3 horizontal lines (path with multiple
-      // line segments). Find it by looking for an SVG with stroke="currentColor"
-      // that contains a path with multiple M/L commands (3+ line segments)
-      const clicked = await page.evaluate(() => {
-        const svgs = document.querySelectorAll('svg');
-        for (const svg of svgs) {
-          const paths = svg.querySelectorAll('path, line');
-          const stroke = svg.getAttribute('stroke') || svg.getAttribute('color') || '';
-          // Hamburger icon: SVG with 3+ paths/lines, small size, stroke-based
-          if (paths.length >= 1) {
-            const pathD = Array.from(paths).map(p => p.getAttribute('d') || '').join('');
-            // 3 horizontal lines = 3 M (move) commands
-            const mCount = (pathD.match(/M/gi) || []).length;
-            if (mCount >= 3) {
-              const parent = svg.closest('div') || svg.parentElement;
-              if (parent) { parent.click(); return 'clicked hamburger parent'; }
-              svg.click();
-              return 'clicked hamburger svg';
-            }
+      // Find the hamburger menu SVG (3 horizontal lines) and click it
+      // using Playwright's click() which properly triggers React events
+      const hamburgerSvg = page.locator('svg path').filter({
+        has: page.locator('xpath=ancestor::svg[count(.//path) >= 3 or count(.//line) >= 3]')
+      }).first().locator('xpath=ancestor::svg');
+
+      // Fallback: try all SVGs and find one with 3+ path/line children
+      let clicked = 'not attempted';
+      try {
+        const svgs = page.locator('svg');
+        const count = await svgs.count();
+        for (let i = 0; i < count; i++) {
+          const svg = svgs.nth(i);
+          const pathCount = await svg.locator('path, line').count();
+          if (pathCount >= 3) {
+            await svg.click({ force: true });
+            clicked = 'clicked svg with ' + pathCount + ' paths at index ' + i;
+            break;
           }
         }
-        return 'no hamburger found';
-      });
+      } catch (e) {
+        clicked = 'click failed: ' + e.message.substring(0, 80);
+      }
+      console.log('[enableSidePanelMode] Menu click:', clicked);
       console.log('[enableSidePanelMode] Menu click:', clicked);
       await new Promise(r => setTimeout(r, 2000));
 
