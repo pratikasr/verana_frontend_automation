@@ -170,28 +170,31 @@ const newAssignWin = `async assignWindows() {
       // Open the hamburger menu by clicking the menu icon in the top-right
       // From the DOM inspection: it's a div with SVG containing 3 lines
       // at the very top-right of the popup, next to the wallet name
-      // Find the hamburger menu SVG (3 horizontal lines) and click it
-      // using Playwright's click() which properly triggers React events
-      const hamburgerSvg = page.locator('svg path').filter({
-        has: page.locator('xpath=ancestor::svg[count(.//path) >= 3 or count(.//line) >= 3]')
-      }).first().locator('xpath=ancestor::svg');
+      // Debug: dump all SVGs to find the hamburger menu
+      const svgDump = await page.evaluate(() => {
+        const svgs = document.querySelectorAll('svg');
+        return Array.from(svgs).map((svg, i) => {
+          const rect = svg.getBoundingClientRect();
+          const paths = svg.querySelectorAll('path, line, rect, circle');
+          const outerHTML = svg.outerHTML.substring(0, 200);
+          return i + ': ' + paths.length + 'children ' + Math.round(rect.left) + ',' + Math.round(rect.top) + ' ' + Math.round(rect.width) + 'x' + Math.round(rect.height) + ' | ' + outerHTML;
+        }).join('\\n');
+      });
+      console.log('[enableSidePanelMode] All SVGs:\\n' + svgDump);
 
-      // Fallback: try all SVGs and find one with 3+ path/line children
-      let clicked = 'not attempted';
-      try {
-        const svgs = page.locator('svg');
-        const count = await svgs.count();
-        for (let i = 0; i < count; i++) {
-          const svg = svgs.nth(i);
-          const pathCount = await svg.locator('path, line').count();
-          if (pathCount >= 3) {
-            await svg.click({ force: true });
-            clicked = 'clicked svg with ' + pathCount + ' paths at index ' + i;
-            break;
-          }
+      // Try clicking each SVG starting from the last (hamburger is usually last in header)
+      let clicked = 'not found';
+      const svgs = page.locator('svg');
+      const svgCount = await svgs.count();
+      // Click the last SVG that is in the top area (likely the hamburger)
+      for (let i = svgCount - 1; i >= 0; i--) {
+        const svg = svgs.nth(i);
+        const box = await svg.boundingBox();
+        if (box && box.y < 80 && box.width < 50) {
+          await svg.click({ force: true });
+          clicked = 'clicked svg index ' + i + ' at ' + Math.round(box.x) + ',' + Math.round(box.y);
+          break;
         }
-      } catch (e) {
-        clicked = 'click failed: ' + e.message.substring(0, 80);
       }
       console.log('[enableSidePanelMode] Menu click:', clicked);
       console.log('[enableSidePanelMode] Menu click:', clicked);
