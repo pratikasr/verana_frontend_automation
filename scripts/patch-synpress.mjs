@@ -160,20 +160,27 @@ const newAssignWin = `async assignWindows() {
     if (!keplrExtensionData) return;
 
     const extPrefix = 'chrome-extension://' + keplrExtensionData.id;
-    const page = keplrWindow || (await browser.contexts()[0].newPage());
-    const needsClose = !keplrWindow;
+    const context = await browser.contexts()[0];
+    const page = await context.newPage();
 
     await page.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
     await new Promise(r => setTimeout(r, 3000));
 
     try {
-      // Click the hamburger menu icon (≡) at top-right
-      // It's typically rendered as an SVG with 3 horizontal lines
-      const menuIcon = page.locator('svg').last();
-      await menuIcon.click();
-      await new Promise(r => setTimeout(r, 1000));
+      // Click the hamburger menu (≡) at top-right of the Keplr popup
+      // It's the last clickable element in the header area with 3 horizontal lines
+      const allBtns = page.locator('header button, header svg, header div[role="button"]');
+      const btnCount = await allBtns.count();
+      if (btnCount > 0) {
+        // The menu icon is typically the last button/icon in the header
+        await allBtns.last().click();
+      } else {
+        // Fallback: try clicking any SVG that looks like a hamburger
+        await page.locator('svg').last().click();
+      }
+      await new Promise(r => setTimeout(r, 1500));
 
-      // Click "Side Panel Mode" text to toggle it on
+      // Click "Side Panel Mode" to toggle it on
       const sidePanelOption = page.getByText('Side Panel Mode');
       await sidePanelOption.waitFor({ timeout: 5000 });
       await sidePanelOption.click();
@@ -184,9 +191,7 @@ const newAssignWin = `async assignWindows() {
       console.log('[synpress-patch] Could not enable side panel mode:', e.message);
     }
 
-    if (needsClose) {
-      await page.close().catch(() => {});
-    }
+    await page.close().catch(() => {});
   },`;
 
 if (assignWinRe.test(content)) {
@@ -346,21 +351,6 @@ if (fs.existsSync(keplrJsPath)) {
     );
     return true;
   },`;
-
-  // Also patch initialSetup to enable side panel mode after wallet import
-  const oldInitialSetupEnd = `await playwright.switchToCypressWindow();
-  },`;
-  const newInitialSetupEnd = `// MV3: enable side panel mode for popup-based approvals
-    await playwright.enableSidePanelMode().catch((e) =>
-      console.log('[synpress-patch] enableSidePanelMode skipped:', e.message)
-    );
-    await playwright.switchToCypressWindow();
-  },`;
-
-  if (keplrContent.includes(oldInitialSetupEnd)) {
-    keplrContent = keplrContent.replace(oldInitialSetupEnd, newInitialSetupEnd);
-    console.log('✓ Patched initialSetup to enable side panel mode after import');
-  }
 
   const newAcceptAccess = `async acceptAccess() {
     const notificationPage = await playwright.switchToKeplrNotification();
