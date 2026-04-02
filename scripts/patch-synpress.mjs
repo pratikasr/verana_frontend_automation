@@ -189,28 +189,18 @@ const newAssignWin = `async assignWindows() {
       });
       console.log('[enableSidePanelMode] Top elements:\\n' + topDump);
 
-      // The hamburger menu in Keplr popup is a div with ≡ or ☰ character,
-      // or a styled div with 3 horizontal lines via CSS
-      // Try clicking elements at the far right of the top bar
-      let clicked = 'not found';
-      const topRight = page.locator('div, button, span').filter({
-        hasNot: page.locator('svg')
-      });
-      const count = await topRight.count();
-      let bestIdx = -1;
-      let bestRight = 0;
-      for (let i = 0; i < count; i++) {
-        const box = await topRight.nth(i).boundingBox();
-        if (box && box.y > 10 && box.y < 80 && box.width > 10 && box.width < 60 && box.x + box.width > bestRight) {
-          bestRight = box.x + box.width;
-          bestIdx = i;
-        }
+      // popup.html opened as a page shows bottom nav with Settings tab
+      // Click Settings → look for Side Panel Mode toggle
+      const settingsTab = page.getByText('Settings', { exact: true });
+      const settingsExists = await settingsTab.count();
+      console.log('[enableSidePanelMode] Settings tab found:', settingsExists > 0);
+
+      if (settingsExists > 0) {
+        await settingsTab.click();
+        await new Promise(r => setTimeout(r, 2000));
+        const bodyText = await page.innerText('body').catch(() => '');
+        console.log('[enableSidePanelMode] Settings page:', bodyText.substring(0, 300));
       }
-      if (bestIdx >= 0) {
-        await topRight.nth(bestIdx).click({ force: true });
-        clicked = 'clicked top-right element index ' + bestIdx;
-      }
-      console.log('[enableSidePanelMode] Menu click:', clicked);
       console.log('[enableSidePanelMode] Menu click:', clicked);
       await new Promise(r => setTimeout(r, 2000));
 
