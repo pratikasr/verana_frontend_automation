@@ -292,3 +292,48 @@ if (
 
 fs.writeFileSync(filePath, content);
 console.log('All patches applied to playwright-keplr.js');
+
+// 6. Patch keplr.js — acceptAccess should close popup manually instead of
+//    waiting for the "close" event (MV3 popups opened via newPage don't
+//    auto-close after clicking approve)
+const keplrJsPath = path.join(
+  ROOT, 'node_modules', '@agoric', 'synpress', 'commands', 'keplr.js',
+);
+if (fs.existsSync(keplrJsPath)) {
+  let keplrContent = fs.readFileSync(keplrJsPath, 'utf8');
+
+  const oldAcceptAccess = `async acceptAccess() {
+    const notificationPage = await playwright.switchToKeplrNotification();
+    await playwright.waitAndClick(
+      notificationPageElements.approveButton,
+      notificationPage,
+      { waitForEvent: 'close' },
+    );
+    return true;
+  },`;
+
+  const newAcceptAccess = `async acceptAccess() {
+    const notificationPage = await playwright.switchToKeplrNotification();
+    await playwright.waitAndClick(
+      notificationPageElements.approveButton,
+      notificationPage,
+    );
+    // MV3 fix: popup opened via newPage() won't auto-close — close it manually
+    await new Promise(r => setTimeout(r, 2000));
+    if (notificationPage && !notificationPage.isClosed()) {
+      await notificationPage.close().catch(() => {});
+    }
+    await playwright.switchToCypressWindow();
+    return true;
+  },`;
+
+  if (keplrContent.includes(oldAcceptAccess)) {
+    keplrContent = keplrContent.replace(oldAcceptAccess, newAcceptAccess);
+    fs.writeFileSync(keplrJsPath, keplrContent);
+    console.log('✓ Patched acceptAccess in keplr.js (manual popup close for MV3)');
+  } else {
+    console.log('⚠ acceptAccess already patched or not found in keplr.js');
+  }
+} else {
+  console.log('⚠ keplr.js not found, skipping acceptAccess patch');
+}
