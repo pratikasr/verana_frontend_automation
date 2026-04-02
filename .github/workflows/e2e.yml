@@ -46,7 +46,7 @@ jobs:
             sleep 2
           fi
       - name: Clean stale Chrome profiles
-        run: rm -rf ~/.config/Cypress/cy/production/browsers/chrome-stable/run-* 2>/dev/null || true
+        run: rm -rf ~/.config/Cypress/cy/production/browsers/chrome-stable/ 2>/dev/null || true
       - name: Run E2E tests
         run: npx synpress run --configFile=tests/e2e/synpress.config.cjs --browser=/opt/chrome-for-testing/chrome --spec tests/e2e/specs/01-connect-wallet.spec.js
         env:
