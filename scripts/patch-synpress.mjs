@@ -163,32 +163,42 @@ const newAssignWin = `async assignWindows() {
     const context = await browser.contexts()[0];
     const page = await context.newPage();
 
-    await page.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
-    await new Promise(r => setTimeout(r, 3000));
-
     try {
-      // Click the hamburger menu (≡) at top-right of the Keplr popup
-      // It's the last clickable element in the header area with 3 horizontal lines
-      const allBtns = page.locator('header button, header svg, header div[role="button"]');
-      const btnCount = await allBtns.count();
-      if (btnCount > 0) {
-        // The menu icon is typically the last button/icon in the header
-        await allBtns.last().click();
-      } else {
-        // Fallback: try clicking any SVG that looks like a hamburger
-        await page.locator('svg').last().click();
-      }
-      await new Promise(r => setTimeout(r, 1500));
+      await page.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
+      await new Promise(r => setTimeout(r, 4000));
 
-      // Click "Side Panel Mode" to toggle it on
-      const sidePanelOption = page.getByText('Side Panel Mode');
-      await sidePanelOption.waitFor({ timeout: 5000 });
-      await sidePanelOption.click();
+      const bodyText = await page.innerText('body').catch(() => '');
+      console.log('[enableSidePanelMode] popup body:', bodyText.substring(0, 100));
+
+      // Click the hamburger menu (≡) in top-right by finding the
+      // rightmost clickable element in the top bar area
+      await page.evaluate(() => {
+        const els = document.querySelectorAll('div, button, svg, span');
+        let bestEl = null;
+        let bestX = 0;
+        for (const el of els) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top < 60 && rect.height < 40 && rect.height > 10 &&
+              rect.right > bestX && rect.width < 60) {
+            bestX = rect.right;
+            bestEl = el;
+          }
+        }
+        if (bestEl) bestEl.click();
+      });
       await new Promise(r => setTimeout(r, 2000));
 
-      console.log('[synpress-patch] Side panel mode enabled');
+      // Click "Side Panel Mode" text to toggle it on
+      const sidePanelOption = page.getByText('Side Panel Mode');
+      const exists = await sidePanelOption.count();
+      console.log('[enableSidePanelMode] Side Panel Mode found:', exists > 0);
+      if (exists > 0) {
+        await sidePanelOption.click();
+        await new Promise(r => setTimeout(r, 2000));
+        console.log('[enableSidePanelMode] Toggled on');
+      }
     } catch (e) {
-      console.log('[synpress-patch] Could not enable side panel mode:', e.message);
+      console.log('[enableSidePanelMode] Error:', e.message.substring(0, 100));
     }
 
     await page.close().catch(() => {});
@@ -328,6 +338,22 @@ if (fs.existsSync(keplrJsPath)) {
     );
     return true;
   },`;
+
+  // Patch initialSetup to enable side panel mode after wallet import
+  const oldInitialSetupEnd = 'await playwright.switchToCypressWindow();\n  },';
+  const newInitialSetupEnd = `// MV3: enable side panel mode so approvals open as sidePanel.html pages
+    await playwright.enableSidePanelMode().catch((e) =>
+      console.log('[initialSetup] enableSidePanelMode error:', e.message.substring(0, 100))
+    );
+    await playwright.switchToCypressWindow();
+  },`;
+
+  if (keplrContent.includes(oldInitialSetupEnd)) {
+    keplrContent = keplrContent.replace(oldInitialSetupEnd, newInitialSetupEnd);
+    console.log('✓ Patched initialSetup to enable side panel mode after import');
+  } else {
+    console.log('⚠ initialSetup patch target not found');
+  }
 
   const newAcceptAccess = `async acceptAccess() {
     const notificationPage = await playwright.switchToKeplrNotification();
