@@ -152,6 +152,51 @@ const newAssignWin = `async assignWindows() {
     }
 
     return true;
+  },
+
+  // MV3: enable side panel mode so approval popups appear as pages
+  async enableSidePanelMode() {
+    const keplrExtensionData = (await module.exports.getExtensionsData()).keplr;
+    if (!keplrExtensionData) return;
+
+    const context = await browser.contexts()[0];
+    const settingsPage = await context.newPage();
+    const extPrefix = 'chrome-extension://' + keplrExtensionData.id;
+
+    // Open popup and navigate to enable side panel
+    await settingsPage.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Click the hamburger/menu button (top-right)
+    try {
+      const menuBtn = settingsPage.locator('button').last();
+      // Look for the menu icon in the header area
+      const headerBtns = settingsPage.locator('div').filter({ hasText: /cooluser|wallet/i }).locator('button, svg').first();
+      // Try clicking menu/hamburger icon
+      const menuIcon = settingsPage.locator('[class*="menu"], [aria-label*="menu"], svg').first();
+
+      // Simpler: just navigate directly to side panel settings via URL
+      await settingsPage.goto(extPrefix + '/popup.html#/setting', { waitUntil: 'load' });
+      await new Promise(r => setTimeout(r, 1000));
+
+      // Look for Side Panel toggle
+      const sidePanelText = settingsPage.getByText('Side Panel Mode');
+      const exists = await sidePanelText.count();
+      if (exists > 0) {
+        // Find and click the toggle near "Side Panel Mode"
+        const toggle = sidePanelText.locator('..').locator('input, [role="switch"], label').first();
+        const toggleExists = await toggle.count();
+        if (toggleExists > 0) {
+          await toggle.click();
+          await new Promise(r => setTimeout(r, 1000));
+          console.log('[synpress-patch] Side panel mode enabled');
+        }
+      }
+    } catch (e) {
+      console.log('[synpress-patch] Could not enable side panel mode:', e.message);
+    }
+
+    await settingsPage.close().catch(() => {});
   },`;
 
 if (assignWinRe.test(content)) {
@@ -182,12 +227,15 @@ const switchNotifRe =
   /async switchToKeplrNotification\(\) \{[\s\S]*?throw new Error[\s\S]*?\}\s*\},/;
 const newSwitchNotif = `async switchToKeplrNotification() {
     const keplrExtensionData = (await module.exports.getExtensionsData()).keplr;
+    const extPrefix = 'chrome-extension://' + keplrExtensionData.id;
 
-    // Check existing pages for the popup (works for MV2 and MV3)
+    // Check existing pages for popup.html or sidePanel.html
     let pages = await browser.contexts()[0].pages();
     for (const page of pages) {
+      const url = page.url();
       if (
-        page.url().includes('chrome-extension://' + keplrExtensionData.id + '/popup.html') &&
+        (url.includes(extPrefix + '/popup.html') ||
+         url.includes(extPrefix + '/sidePanel.html')) &&
         page !== keplrWindow
       ) {
         keplrNotificationWindow = page;
@@ -198,7 +246,7 @@ const newSwitchNotif = `async switchToKeplrNotification() {
       }
     }
 
-    // Also check if the cached keplrNotificationWindow from page event listener is set
+    // Check cached keplrNotificationWindow from page event listener
     if (keplrNotificationWindow && !keplrNotificationWindow.isClosed()) {
       retries = 0;
       await keplrNotificationWindow.bringToFront();
@@ -206,30 +254,42 @@ const newSwitchNotif = `async switchToKeplrNotification() {
       return keplrNotificationWindow;
     }
 
-    // MV3 fix: at retry 20, try opening popup.html directly
-    // In MV3 Keplr, pending requests are shown when popup.html is opened
-    if (retries === 20) {
+    // MV3 fix: at retry 15, open popup.html directly
+    // (Keplr shows pending approval requests when popup is opened)
+    if (retries === 15) {
       try {
         const context = await browser.contexts()[0];
         const popupPage = await context.newPage();
-        await popupPage.goto(
-          'chrome-extension://' + keplrExtensionData.id + '/popup.html',
-          { waitUntil: 'load' }
-        );
+        await popupPage.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
         await new Promise(r => setTimeout(r, 3000));
         const bodyText = await popupPage.innerText('body').catch(() => '');
-        // Only use if it has meaningful content (approval UI)
-        if (bodyText.length > 10) {
+        if (bodyText.includes('Approve') || bodyText.includes('Requesting')) {
           keplrNotificationWindow = popupPage;
           retries = 0;
           await popupPage.bringToFront();
           return popupPage;
-        } else {
-          await popupPage.close().catch(() => {});
         }
-      } catch (e) {
-        // popup open failed
-      }
+        await popupPage.close().catch(() => {});
+      } catch (e) { /* continue */ }
+    }
+
+    // MV3 fix: at retry 25, try sidePanel.html
+    // (Keplr MV3 uses side panel for approval in side panel mode)
+    if (retries === 25) {
+      try {
+        const context = await browser.contexts()[0];
+        const sidePanelPage = await context.newPage();
+        await sidePanelPage.goto(extPrefix + '/sidePanel.html', { waitUntil: 'load' });
+        await new Promise(r => setTimeout(r, 3000));
+        const bodyText = await sidePanelPage.innerText('body').catch(() => '');
+        if (bodyText.includes('Approve') || bodyText.includes('Requesting')) {
+          keplrNotificationWindow = sidePanelPage;
+          retries = 0;
+          await sidePanelPage.bringToFront();
+          return sidePanelPage;
+        }
+        await sidePanelPage.close().catch(() => {});
+      } catch (e) { /* continue */ }
     }
 
     await sleep(500);
@@ -263,7 +323,10 @@ if (
     const context = await browser.contexts()[0];
     context.on('page', async (newPage) => {
       const keplrExt = (await module.exports.getExtensionsData()).keplr;
-      if (keplrExt && newPage.url().includes('chrome-extension://' + keplrExt.id + '/popup.html')) {
+      if (keplrExt && (
+        newPage.url().includes('chrome-extension://' + keplrExt.id + '/popup.html') ||
+        newPage.url().includes('chrome-extension://' + keplrExt.id + '/sidePanel.html')
+      )) {
         keplrNotificationWindow = newPage;
       }
     });
@@ -293,6 +356,21 @@ if (fs.existsSync(keplrJsPath)) {
     );
     return true;
   },`;
+
+  // Also patch initialSetup to enable side panel mode after wallet import
+  const oldInitialSetupEnd = `await playwright.switchToCypressWindow();
+  },`;
+  const newInitialSetupEnd = `// MV3: enable side panel mode for popup-based approvals
+    await playwright.enableSidePanelMode().catch((e) =>
+      console.log('[synpress-patch] enableSidePanelMode skipped:', e.message)
+    );
+    await playwright.switchToCypressWindow();
+  },`;
+
+  if (keplrContent.includes(oldInitialSetupEnd)) {
+    keplrContent = keplrContent.replace(oldInitialSetupEnd, newInitialSetupEnd);
+    console.log('✓ Patched initialSetup to enable side panel mode after import');
+  }
 
   const newAcceptAccess = `async acceptAccess() {
     const notificationPage = await playwright.switchToKeplrNotification();

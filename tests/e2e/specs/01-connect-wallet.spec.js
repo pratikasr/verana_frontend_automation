@@ -22,10 +22,15 @@ describe('Connect Keplr Wallet', () => {
     cy.contains('Keplr', { timeout: 10000 }).click();
 
     // Approve the Keplr connection popup
-    cy.acceptAccess();
+    // Use acceptAccess which handles MV3 popup detection
+    cy.acceptAccess().then(() => {
+      // After approval, wait for the dApp to process the connection
+      cy.wait(5000);
+    });
 
     // Verify wallet is connected — the "Connect Wallet" button should disappear
-    cy.contains('Connect Wallet').should('not.exist');
+    // Use a longer timeout as chain connection can take time
+    cy.contains('Connect Wallet', { timeout: 60000 }).should('not.exist');
     cy.log('Wallet connected successfully');
   });
 });
