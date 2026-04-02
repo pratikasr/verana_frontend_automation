@@ -21,16 +21,34 @@ describe('Connect Keplr Wallet', () => {
     // Select Keplr from the wallet modal
     cy.contains('Keplr', { timeout: 10000 }).click();
 
-    // Approve the Keplr connection popup
-    // Use acceptAccess which handles MV3 popup detection
-    cy.acceptAccess().then(() => {
-      // After approval, wait for the dApp to process the connection
-      cy.wait(5000);
+    // MV3 Keplr: the approval popup uses chrome.action.openPopup()
+    // which is invisible to Playwright/Cypress. Instead of using
+    // cy.acceptAccess(), we wait and check if the dApp auto-connected.
+    // If pre-granted permission worked, it will auto-connect.
+    // If not, we retry the connection.
+    cy.wait(5000);
+
+    // Check if connected — if "Connect Wallet" still visible, try again
+    cy.get('body').then(($body) => {
+      if ($body.text().includes('Connect Wallet')) {
+        cy.log('First attempt failed, retrying with direct enable...');
+        // Try calling keplr.enable directly from the page
+        cy.window().then(async (win) => {
+          try {
+            if (win.keplr) {
+              await win.keplr.enable('vna-testnet-1');
+              cy.log('Direct keplr.enable succeeded');
+            }
+          } catch (e) {
+            cy.log('keplr.enable error (expected if popup needed): ' + e.message);
+          }
+        });
+        cy.wait(5000);
+      }
     });
 
-    // Verify wallet is connected — the "Connect Wallet" button should disappear
-    // Use a longer timeout as chain connection can take time
-    cy.contains('Connect Wallet', { timeout: 60000 }).should('not.exist');
+    // Final verification — allow up to 30s for the connection to process
+    cy.contains('Connect Wallet', { timeout: 30000 }).should('not.exist');
     cy.log('Wallet connected successfully');
   });
 });
