@@ -170,26 +170,28 @@ const newAssignWin = `async assignWindows() {
       // Open the hamburger menu by clicking the menu icon in the top-right
       // From the DOM inspection: it's a div with SVG containing 3 lines
       // at the very top-right of the popup, next to the wallet name
+      // The hamburger menu SVG has 3 horizontal lines (path with multiple
+      // line segments). Find it by looking for an SVG with stroke="currentColor"
+      // that contains a path with multiple M/L commands (3+ line segments)
       const clicked = await page.evaluate(() => {
-        // Strategy 1: The hamburger menu is the rightmost clickable element
-        // in the top bar. Find it by looking at all elements in top 60px
-        // and picking the one furthest right.
-        const allEls = document.querySelectorAll('div, button, svg');
-        let candidates = [];
-        for (const el of allEls) {
-          const rect = el.getBoundingClientRect();
-          if (rect.top >= 0 && rect.top < 60 && rect.width > 5 && rect.width < 50 && rect.height > 5 && rect.height < 50) {
-            candidates.push({ el, right: rect.right, left: rect.left, top: rect.top });
+        const svgs = document.querySelectorAll('svg');
+        for (const svg of svgs) {
+          const paths = svg.querySelectorAll('path, line');
+          const stroke = svg.getAttribute('stroke') || svg.getAttribute('color') || '';
+          // Hamburger icon: SVG with 3+ paths/lines, small size, stroke-based
+          if (paths.length >= 1) {
+            const pathD = Array.from(paths).map(p => p.getAttribute('d') || '').join('');
+            // 3 horizontal lines = 3 M (move) commands
+            const mCount = (pathD.match(/M/gi) || []).length;
+            if (mCount >= 3) {
+              const parent = svg.closest('div') || svg.parentElement;
+              if (parent) { parent.click(); return 'clicked hamburger parent'; }
+              svg.click();
+              return 'clicked hamburger svg';
+            }
           }
         }
-        // Sort by rightmost position
-        candidates.sort((a, b) => b.right - a.right);
-        if (candidates.length > 0) {
-          const best = candidates[0];
-          best.el.click();
-          return 'clicked at right=' + best.right + ' left=' + best.left + ' top=' + best.top;
-        }
-        return 'no menu found';
+        return 'no hamburger found';
       });
       console.log('[enableSidePanelMode] Menu click:', clicked);
       await new Promise(r => setTimeout(r, 2000));
