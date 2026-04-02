@@ -164,39 +164,25 @@ const newAssignWin = `async assignWindows() {
     const page = await context.newPage();
 
     try {
+      // Set side panel preference directly via extension storage API
+      // This bypasses the UI entirely — no need to click the hamburger menu
       await page.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
-      await new Promise(r => setTimeout(r, 4000));
-
-      const bodyText = await page.innerText('body').catch(() => '');
-      console.log('[enableSidePanelMode] popup body:', bodyText.substring(0, 100));
-
-      // Click the hamburger menu (≡) in top-right by finding the
-      // rightmost clickable element in the top bar area
-      await page.evaluate(() => {
-        const els = document.querySelectorAll('div, button, svg, span');
-        let bestEl = null;
-        let bestX = 0;
-        for (const el of els) {
-          const rect = el.getBoundingClientRect();
-          if (rect.top < 60 && rect.height < 40 && rect.height > 10 &&
-              rect.right > bestX && rect.width < 60) {
-            bestX = rect.right;
-            bestEl = el;
-          }
-        }
-        if (bestEl) bestEl.click();
-      });
       await new Promise(r => setTimeout(r, 2000));
 
-      // Click "Side Panel Mode" text to toggle it on
-      const sidePanelOption = page.getByText('Side Panel Mode');
-      const exists = await sidePanelOption.count();
-      console.log('[enableSidePanelMode] Side Panel Mode found:', exists > 0);
-      if (exists > 0) {
-        await sidePanelOption.click();
-        await new Promise(r => setTimeout(r, 2000));
-        console.log('[enableSidePanelMode] Toggled on');
-      }
+      await page.evaluate(() => {
+        return new Promise((resolve) => {
+          if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.set({ 'sidePanel.isEnabled': true }, () => {
+              console.log('Side panel enabled via storage API');
+              resolve(true);
+            });
+          } else {
+            resolve(false);
+          }
+        });
+      });
+      await new Promise(r => setTimeout(r, 1000));
+      console.log('[enableSidePanelMode] Set via chrome.storage.local API');
     } catch (e) {
       console.log('[enableSidePanelMode] Error:', e.message.substring(0, 100));
     }
