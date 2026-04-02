@@ -183,7 +183,7 @@ const switchNotifRe =
 const newSwitchNotif = `async switchToKeplrNotification() {
     const keplrExtensionData = (await module.exports.getExtensionsData()).keplr;
 
-    // First check existing pages (works for MV2 and some MV3 cases)
+    // Check existing pages for the popup (works for MV2 and MV3)
     let pages = await browser.contexts()[0].pages();
     for (const page of pages) {
       if (
@@ -198,36 +198,17 @@ const newSwitchNotif = `async switchToKeplrNotification() {
       }
     }
 
-    // MV3 fix: popup may not be in context.pages() — check CDP targets
-    // and open popup.html manually if a notification is pending
-    if (retries === 10 || retries === 30) {
-      try {
-        const resp = await fetch('http://127.0.0.1:9222/json/list');
-        const targets = await resp.json();
-        for (const target of targets) {
-          if (
-            target.url.includes('chrome-extension://' + keplrExtensionData.id + '/popup.html') &&
-            target.type === 'page'
-          ) {
-            // Found popup via CDP — connect to it
-            const context = await browser.contexts()[0];
-            const popupPage = await context.newPage();
-            await popupPage.goto(target.url, { waitUntil: 'load' });
-            await new Promise(r => setTimeout(r, 1000));
-            keplrNotificationWindow = popupPage;
-            retries = 0;
-            await popupPage.bringToFront();
-            await module.exports.waitUntilStable(popupPage);
-            return popupPage;
-          }
-        }
-      } catch (e) {
-        // CDP check failed, continue retrying
-      }
+    // Also check if the cached keplrNotificationWindow from page event listener is set
+    if (keplrNotificationWindow && !keplrNotificationWindow.isClosed()) {
+      retries = 0;
+      await keplrNotificationWindow.bringToFront();
+      await module.exports.waitUntilStable(keplrNotificationWindow);
+      return keplrNotificationWindow;
     }
 
-    // At retry 40, try opening popup.html directly as a last resort
-    if (retries === 40) {
+    // MV3 fix: at retry 20, try opening popup.html directly
+    // In MV3 Keplr, pending requests are shown when popup.html is opened
+    if (retries === 20) {
       try {
         const context = await browser.contexts()[0];
         const popupPage = await context.newPage();
@@ -235,22 +216,23 @@ const newSwitchNotif = `async switchToKeplrNotification() {
           'chrome-extension://' + keplrExtensionData.id + '/popup.html',
           { waitUntil: 'load' }
         );
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 3000));
         const bodyText = await popupPage.innerText('body').catch(() => '');
-        if (bodyText.length > 0) {
+        // Only use if it has meaningful content (approval UI)
+        if (bodyText.length > 10) {
           keplrNotificationWindow = popupPage;
           retries = 0;
           await popupPage.bringToFront();
           return popupPage;
         } else {
-          await popupPage.close();
+          await popupPage.close().catch(() => {});
         }
       } catch (e) {
         // popup open failed
       }
     }
 
-    await sleep(200);
+    await sleep(500);
     if (retries < 50) {
       retries++;
       return await module.exports.switchToKeplrNotification();
@@ -314,12 +296,20 @@ if (fs.existsSync(keplrJsPath)) {
 
   const newAcceptAccess = `async acceptAccess() {
     const notificationPage = await playwright.switchToKeplrNotification();
-    await playwright.waitAndClick(
-      notificationPageElements.approveButton,
-      notificationPage,
-    );
+    // MV3 Keplr: the popup may show an "Approve" button or just a generic button.
+    // Try clicking "Approve" text first, then fall back to any button.
+    try {
+      const approveBtn = notificationPage.getByText('Approve').first();
+      await approveBtn.waitFor({ timeout: 5000 });
+      await approveBtn.click();
+    } catch (e) {
+      await playwright.waitAndClick(
+        notificationPageElements.approveButton,
+        notificationPage,
+      );
+    }
     // MV3 fix: popup opened via newPage() won't auto-close — close it manually
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 3000));
     if (notificationPage && !notificationPage.isClosed()) {
       await notificationPage.close().catch(() => {});
     }
