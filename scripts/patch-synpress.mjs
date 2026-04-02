@@ -154,7 +154,8 @@ const newAssignWin = `async assignWindows() {
     return true;
   },
 
-  // MV3: enable side panel mode so approval popups appear as accessible pages
+  // MV3: pre-grant dApp permission so Keplr doesn't show an approval popup
+  // (MV3 approval popups use chrome.action.openPopup() which is invisible to Playwright)
   async enableSidePanelMode() {
     const keplrExtensionData = (await module.exports.getExtensionsData()).keplr;
     if (!keplrExtensionData) return;
@@ -167,47 +168,33 @@ const newAssignWin = `async assignWindows() {
       await page.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
       await new Promise(r => setTimeout(r, 2000));
 
-      // Enable side panel via chrome.storage.local
-      // Key: 'side-panel/sidePanel.isEnabled' (discovered from Keplr storage dump)
+      // Pre-grant permission for the dApp origin so Keplr auto-approves
+      // without showing a popup. Key: 'permission/permissionMap/v1'
       const result = await page.evaluate(async () => {
-        await new Promise(r => chrome.storage.local.set({
-          'side-panel/sidePanel.isEnabled': true
-        }, r));
-        const check = await new Promise(r =>
-          chrome.storage.local.get('side-panel/sidePanel.isEnabled', r)
+        // Read current permission map
+        const items = await new Promise(r =>
+          chrome.storage.local.get('permission/permissionMap/v1', r)
         );
-        return check['side-panel/sidePanel.isEnabled'];
-      });
-      console.log('[enableSidePanelMode] Set side-panel/sidePanel.isEnabled =', result);
-      await page.close().catch(() => {});
+        const permMap = JSON.parse(items['permission/permissionMap/v1'] || '{}');
 
-      // Reload the extension so the service worker picks up the new value
-      const reloadPage = await context.newPage();
-      await reloadPage.goto('chrome://extensions', { waitUntil: 'load' });
-      await new Promise(r => setTimeout(r, 2000));
-      // Click the reload button for the Keplr extension via the page
-      await reloadPage.evaluate((extId) => {
-        const manager = document.querySelector('extensions-manager');
-        if (manager && manager.shadowRoot) {
-          const itemList = manager.shadowRoot.querySelector('extensions-item-list');
-          if (itemList && itemList.shadowRoot) {
-            const items = itemList.shadowRoot.querySelectorAll('extensions-item');
-            for (const item of items) {
-              const idEl = item.shadowRoot?.querySelector('#extension-id');
-              if (idEl && idEl.textContent.includes(extId)) {
-                const reloadBtn = item.shadowRoot?.querySelector('#dev-reload-button');
-                if (reloadBtn) reloadBtn.click();
-              }
-            }
-          }
-        }
-      }, keplrExtensionData.id);
-      await new Promise(r => setTimeout(r, 3000));
-      console.log('[enableSidePanelMode] Extension reloaded');
-      await reloadPage.close().catch(() => {});
-      return; // skip the page.close below since we already closed it
+        // Grant permission for the Verana testnet dApp
+        const origin = 'https://app.testnet.verana.network';
+        permMap[origin] = permMap[origin] || ['vna-testnet-1', 'cosmoshub-4', 'osmosis-1'];
+
+        // Save back
+        await new Promise(r => chrome.storage.local.set({
+          'permission/permissionMap/v1': JSON.stringify(permMap)
+        }, r));
+
+        // Verify
+        const check = await new Promise(r =>
+          chrome.storage.local.get('permission/permissionMap/v1', r)
+        );
+        return check['permission/permissionMap/v1'];
+      });
+      console.log('[preGrantPermission] permissionMap set:', result);
     } catch (e) {
-      console.log('[enableSidePanelMode] Error:', e.message.substring(0, 150));
+      console.log('[preGrantPermission] Error:', e.message.substring(0, 150));
     }
 
     await page.close().catch(() => {});
@@ -365,28 +352,11 @@ if (fs.existsSync(keplrJsPath)) {
   }
 
   const newAcceptAccess = `async acceptAccess() {
-    const notificationPage = await playwright.switchToKeplrNotification();
-    console.log('[acceptAccess] notification URL:', notificationPage.url());
-    console.log('[acceptAccess] body text:', (await notificationPage.innerText('body').catch(() => '')).substring(0, 200));
-
-    // MV3 Keplr: try clicking "Approve" button text first, then fall back to generic button
-    try {
-      const approveBtn = notificationPage.getByRole('button', { name: /approve/i }).first();
-      await approveBtn.waitFor({ timeout: 10000 });
-      await approveBtn.click();
-      console.log('[acceptAccess] Clicked Approve button');
-    } catch (e) {
-      console.log('[acceptAccess] No Approve button, trying generic button');
-      await playwright.waitAndClick(
-        notificationPageElements.approveButton,
-        notificationPage,
-      );
-    }
-    // MV3 fix: popup opened via newPage() won't auto-close — close it manually
+    // MV3 fix: permission was pre-granted via chrome.storage.local
+    // in enableSidePanelMode(), so no approval popup is needed.
+    // Just wait briefly for the dApp to process the auto-approved connection.
+    console.log('[acceptAccess] Permission pre-granted, waiting for auto-approval...');
     await new Promise(r => setTimeout(r, 3000));
-    if (notificationPage && !notificationPage.isClosed()) {
-      await notificationPage.close().catch(() => {});
-    }
     await playwright.switchToCypressWindow();
     return true;
   },`;
