@@ -164,6 +164,8 @@ const newAssignWin = `async assignWindows() {
     const page = await context.newPage();
 
     try {
+      // Set narrow viewport so Keplr renders in popup mode with hamburger menu
+      await page.setViewportSize({ width: 360, height: 600 });
       await page.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
       await new Promise(r => setTimeout(r, 3000));
 
