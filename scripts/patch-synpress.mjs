@@ -236,7 +236,6 @@ const newSwitchNotif = `async switchToKeplrNotification() {
         keplrNotificationWindow = page;
         retries = 0;
         await page.bringToFront();
-        await module.exports.waitUntilStable(page);
         return page;
       }
     }
@@ -245,39 +244,34 @@ const newSwitchNotif = `async switchToKeplrNotification() {
     if (keplrNotificationWindow && !keplrNotificationWindow.isClosed()) {
       retries = 0;
       await keplrNotificationWindow.bringToFront();
-      await module.exports.waitUntilStable(keplrNotificationWindow);
       return keplrNotificationWindow;
     }
 
-    // MV3 fix: Keplr opens approval in popup.html via chrome.action.openPopup()
-    // which is invisible to Playwright. Try opening popup.html directly — Keplr
-    // will show any pending interaction requests when the popup renders.
-    if (retries === 10) {
+    // MV3 fix: chrome.action.openPopup() creates an invisible popup.
+    // Open popup.html directly — Keplr shows pending interactions there.
+    if (retries === 5) {
       try {
         const context = await browser.contexts()[0];
         const popupPage = await context.newPage();
         await popupPage.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
         await new Promise(r => setTimeout(r, 5000));
-        const bodyText = await popupPage.innerText('body').catch(() => '');
-        console.log('[switchToKeplrNotification] popup.html text:', bodyText.substring(0, 200));
-        if (bodyText.length > 10) {
-          keplrNotificationWindow = popupPage;
-          retries = 0;
-          await popupPage.bringToFront();
-          return popupPage;
-        }
-        await popupPage.close().catch(() => {});
-      } catch (e) { /* continue */ }
+        keplrNotificationWindow = popupPage;
+        retries = 0;
+        await popupPage.bringToFront();
+        return popupPage;
+      } catch (e) {
+        console.log('[switchToKeplrNotification] Failed to open popup:', e.message);
+      }
     }
 
     await sleep(500);
-    if (retries < 50) {
+    if (retries < 20) {
       retries++;
       return await module.exports.switchToKeplrNotification();
-    } else if (retries >= 50) {
+    } else {
       retries = 0;
       throw new Error(
-        '[switchToKeplrNotification] Max amount of retries to switch to keplr notification window has been reached. It was never found.',
+        '[switchToKeplrNotification] Max retries reached. Keplr notification window not found.',
       );
     }
   },`;
