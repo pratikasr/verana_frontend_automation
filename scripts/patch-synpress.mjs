@@ -168,29 +168,57 @@ const newAssignWin = `async assignWindows() {
       await page.goto(extPrefix + '/popup.html', { waitUntil: 'load' });
       await new Promise(r => setTimeout(r, 2000));
 
-      // Pre-grant permission for the dApp origin so Keplr auto-approves
-      // without showing a popup. Key: 'permission/permissionMap/v1'
+      // Pre-grant permission AND add the Verana chain info so Keplr
+      // auto-approves both suggestChain and enable without popups
       const result = await page.evaluate(async () => {
-        // Read current permission map (stored as object, not JSON string)
+        // 1. Grant permission for the dApp origin
         const items = await new Promise(r =>
           chrome.storage.local.get('permission/permissionMap/v1', r)
         );
         const permMap = items['permission/permissionMap/v1'] || {};
-
-        // Grant permission for the Verana testnet dApp
         const origin = 'https://app.testnet.verana.network';
-        permMap[origin] = permMap[origin] || ['vna-testnet-1', 'cosmoshub-4', 'osmosis-1'];
-
-        // Save back (as object, not JSON string)
+        permMap[origin] = permMap[origin] || ['vna-testnet-1'];
         await new Promise(r => chrome.storage.local.set({
           'permission/permissionMap/v1': permMap
         }, r));
 
-        // Verify
-        const check = await new Promise(r =>
-          chrome.storage.local.get('permission/permissionMap/v1', r)
+        // 2. Add Verana chain info to suggested chains so suggestChain
+        //    doesn't need approval either
+        const chainItems = await new Promise(r =>
+          chrome.storage.local.get('chains-v2/suggestedChainInfo/chainInfos', r)
         );
-        return JSON.stringify(check['permission/permissionMap/v1']);
+        const suggestedChains = chainItems['chains-v2/suggestedChainInfo/chainInfos'] || {};
+        if (!suggestedChains['vna-testnet-1']) {
+          suggestedChains['vna-testnet-1'] = {
+            rpc: 'https://rpc.testnet.verana.network',
+            rest: 'https://api.testnet.verana.network',
+            chainId: 'vna-testnet-1',
+            chainName: 'VeranaTestnet1',
+            chainSymbolImageUrl: '',
+            stakeCurrency: { coinDenom: 'VNA', coinMinimalDenom: 'uvna', coinDecimals: 6 },
+            bip44: { coinType: 118 },
+            bech32Config: {
+              bech32PrefixAccAddr: 'verana',
+              bech32PrefixAccPub: 'veranapub',
+              bech32PrefixValAddr: 'veranavaloper',
+              bech32PrefixValPub: 'veranavaloperpub',
+              bech32PrefixConsAddr: 'veranavalcons',
+              bech32PrefixConsPub: 'veranavalconspub',
+            },
+            currencies: [{ coinDenom: 'VNA', coinMinimalDenom: 'uvna', coinDecimals: 6 }],
+            feeCurrencies: [{
+              coinDenom: 'VNA', coinMinimalDenom: 'uvna', coinDecimals: 6,
+              gasPriceStep: { low: 1, average: 3, high: 4 },
+            }],
+            features: [],
+            beta: true,
+          };
+          await new Promise(r => chrome.storage.local.set({
+            'chains-v2/suggestedChainInfo/chainInfos': suggestedChains
+          }, r));
+        }
+
+        return JSON.stringify(permMap);
       });
       console.log('[preGrantPermission] permissionMap set:', result);
     } catch (e) {
