@@ -13,24 +13,20 @@ describe('Connect Keplr Wallet', () => {
     cy.visit('/dashboard');
     cy.wait(3000);
 
-    // Try to enable Keplr directly via the JS API
-    // This will tell us exactly what error Keplr returns
+    // MV3 Keplr: permission was pre-granted via chrome.storage.local
+    // during wallet setup. Call keplr.enable() directly to connect
+    // without needing the approval popup.
     cy.window().then((win) => {
-      cy.log('window.keplr exists: ' + !!win.keplr);
-      if (win.keplr) {
-        cy.log('Calling keplr.enable("vna-testnet-1")...');
-        cy.wrap(
-          win.keplr.enable('vna-testnet-1').then(
-            () => 'SUCCESS',
-            (err) => 'ERROR: ' + err.message
-          )
-        ).then((result) => {
-          cy.log('keplr.enable result: ' + result);
-        });
-      }
+      expect(win.keplr).to.exist;
+      return win.keplr.enable('vna-testnet-1');
     });
 
+    // Wait for the dApp to process the connection
     cy.wait(5000);
-    cy.log('Test completed — check logs for keplr.enable result');
+
+    // Verify wallet is connected — "Connect Wallet" should disappear
+    // and the dashboard should show the connected state
+    cy.get('body').should('not.contain.text', 'Connect Wallet');
+    cy.log('Wallet connected successfully');
   });
 });
